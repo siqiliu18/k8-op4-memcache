@@ -1,34 +1,170 @@
 # memcached-operator
-// TODO(user): Add simple overview of use/purpose
+**Class**: https://apps.course-dev.skills.network/learning/course/course-v1:IBMSkillsNetwork+CO0201EN+2021T1/home
 
 ## Description
-1. init operator
-```
-$ operator-sdk init --domain=siqi.ibm.com --repo=github.com/siqiliu18/memcached-operator
-INFO[0000] Writing kustomize manifests for you to edit... 
-INFO[0000] Writing scaffold for you to edit...          
-INFO[0000] Get controller runtime:
-$ go get sigs.k8s.io/controller-runtime@v0.16.3 
-INFO[0002] Update dependencies:
-$ go mod tidy           
-Next: define a resource with:
-$ operator-sdk create api
-```
+1. init operator >> operator-sdk init --domain=siqi.ibm.com --repo=github.com/siqiliu18/memcached-operator
 2. Let’s take a look at what was generated:
 ```
-a Dockerfile for the controller image, which will be built out of your project
-a Makefile to build, test, deploy, and undeploy the project
-a PROJECT file with the domain and project layout configuration
-a bin directory that contains the binaries for the controller
-a config directory that contains:
-base manifests for deploying the CRD and controller of the operator
-Kustomization YAML for customizing manifests
-RBAC YAML to authorize the various components to interact with each other
-a Patch file for enabling Prometheus metrics
-some sample YAML for creating a simple instance of our new type
-go.mod and go.sum files for managing the Golang depedences of the project
-a hack directory containing a boilerplate license file
-main.go, which contains the main function for your controller
+- a Dockerfile for the controller image, which will be built out of your project
+- a Makefile to build, test, deploy, and undeploy the project
+- a PROJECT file with the domain and project layout configuration
+- a bin directory that contains the binaries for the controller
+- a config directory that contains:
+    - base manifests for deploying the CRD and controller of the operator
+    - Kustomization YAML for customizing manifests
+    - RBAC YAML to authorize the various components to interact with each other
+    - a Patch file for enabling Prometheus metrics
+    - some sample YAML for creating a simple instance of our new type
+- go.mod and go.sum files for managing the Golang depedences of the project
+- a hack directory containing a boilerplate license file
+- main.go, which contains the main function for your controller
+```
+3. Create an API >> operator-sdk create api --group cache --version v1alpha1 --kind Memcached --resource=true --controller=true
+```
+--group is the group where your custom resource is going to live, so it will end up in the API group ‘cache.example.com’.
+--version determines the version of your API group. You can use different versions to successively upgrade your custom resource.
+--resource and --controller flags are set to true to generate the scaffolding for both those things.
+
+Let’s take a look at what changed:
+- PROJECT was updated to include the new scaffolding
+- go.mod was updated with new depdencies
+- main.go was updated to add the new controller to the controller-manager loop
+
+Some of the new generated artifacts are:
+- an API directory that contains the files defining your CRD
+- YAML manifests in config/ for deploying your CRD
+- YAML manifests in config/ for creating RBAC to allow your controller to watch/edit your Memcached type
+- YAML manifests in config/samples/ for creating a sample instance of your Memcached type
+- a controllers directory, that contains the code for your Memcached controller
+```
+4. Update api/v1alpha1/memcached_types.go file to specify the *spec* and *status* fields
+5. run >> make generate
+```
+This make target invokes controller-gen to update api/v1alpha1/zz_generated.deepcopy.go to contain
+the necessary implementations for the fields you just added. Once that is done,
+you should run the following command to generate a YAML manifests for your CRD:
+```
+7. run >> make manifests
+```
+The generated config/crd/bases/cache.example.com_memcacheds.yaml is the manifests for your memcached CRD.
+config/rbac/role.yaml is an RBAC manifest that contains the permissions to manage your memcached type that is needed by the controller.
+```
+8. Create controller:
+    - The Reconcile method is responsible for reconciling the desired state contained in the custom resource’s status with the actual state running on the system and is
+where the lion’s share of the controller logic is implemented. The specifics of implementing the reconcile loop is beyond this tutorial, and will
+be covered in the advanced module. For now, replace controllers/memcached_controller.go with this [reference implementation](https://github.com/operator-framework/operator-sdk/blob/efd1235e842032a3402e2c1ae6d9beb9ee86019a/testdata/go/v3/memcached-operator/controllers/memcached_controller.go).
+    - Note that you may have to change the import path for github.com/example/memcached-operator/api/v1alpha1 to correctly point to the directory you defined your memcached_types.go
+in if you chose to specify a different repo when you initialized your project. After pasting that in, be sure to regenerate the manifests:
+9. Build and deploy your operator
+    - As a program executing outside the Kubernetes cluster. This might be done for development purposes or for security concerns of the data contained in the cluster. The Makefile contains the target make install run to run the operator locally, but this method is not the focus here.
+    - Run as a Deployment inside the Kubernetes cluster. This is what I will show you now.
+    - Deployed and managed by Operator Lifecycle Manager. This is recommended for production use because OLM has additional features for the management and upgrade of a running opeartor.
+```
+$ export USERNAME=<docker-username>
+$ make docker-build docker-push IMG=docker.io/$USERNAME/memcached-operator:v1.0.0
+
+$ make deploy IMG=docker.io/$USERNAME/memcached-operator:v1.0.0
+
+$ kubectl get crds
+NAME                                          CREATED AT
+catalogsources.operators.coreos.com           2021-01-22T00:13:22Z
+clusterserviceversions.operators.coreos.com   2021-01-22T00:13:22Z
+installplans.operators.coreos.com             2021-01-22T00:13:22Z
+memcacheds.cache.example.com                   2021-02-06T00:52:38Z
+operatorgroups.operators.coreos.com           2021-01-22T00:13:22Z
+rbacsyncs.ibm.com                             2021-01-22T00:08:59Z
+subscriptions.operators.coreos.com            2021-01-22T00:13:22Z
+
+$ kubectl --namespace memcached-operator-system get deployments
+NAME                                    READY   UP-TO-DATE   AVAILABLE   AGE
+memcached-operator-controller-manager   1/1     1            1           2m18s
+$ kubectl --namespace memcached-operator-system get pods 
+NAME                                                     READY   STATUS    RESTARTS   AGE
+memcached-operator-controller-manager-76b588bbb5-wvl7b   2/2     Running   0          2m44s
+
+$ kubectl get clusterroles | grep memcached
+memcached-operator-manager-role                                        2021-02-06T00:52:38Z
+memcached-operator-metrics-reader                                      2021-02-06T00:52:39Z
+memcached-operator-proxy-role                                          2021-02-06T00:52:39Z
+$ kubectl get clusterrolebindings | grep memcached
+memcached-operator-manager-rolebinding                 ClusterRole/memcached-operator-manager-role                        3m
+memcached-operator-proxy-rolebinding                   ClusterRole/memcached-operator-proxy-role                          3m
+$ kubectl --namespace memcached-operator-system get roles
+NAME                                      CREATED AT
+memcached-operator-leader-election-role   2021-02-06T00:52:38Z
+$ kubectl --namespace memcached-operator-system get rolebindings
+NAME                                             ROLE                                           AGE
+memcached-operator-leader-election-rolebinding   Role/memcached-operator-leader-election-role   13m
+
+```
+10. Edit the sample YAML at config/samples/cache_v1alpha1_memcached.yaml to include a size integer like you defined in your custom resource spec:
+```
+$ kubectl apply -f config/samples/cache_v1alpha1_memcached.yaml 
+memcached.cache.example.com/memcached-sample created
+
+$ kubectl get memcached
+NAME               AGE
+memcached-sample   18s
+$ kubectl get deployments
+NAME               READY   UP-TO-DATE   AVAILABLE   AGE
+memcached-sample   1/1     1            1           33s
+$ kubectl get pods
+NAME                               READY   STATUS    RESTARTS   AGE
+memcached-sample-9b765dfc8-2hvf8   1/1     Running   0          44s
+
+$ kubectl get memcached memcached-sample -o yaml
+apiVersion: cache.siqi.ibm.com/v1alpha1
+kind: Memcached
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"cache.siqi.ibm.com/v1alpha1","kind":"Memcached","metadata":{"annotations":{},"name":"memcached-sample","namespace":"default"},"spec":{"size":1}}
+  creationTimestamp: "2024-04-13T23:52:35Z"
+  generation: 1
+  name: memcached-sample
+  namespace: default
+  resourceVersion: "1015284"
+  uid: 6b8aaf19-8f7d-4bbd-abb8-2154bab5cbbf
+spec:
+  size: 1
+status:
+  nodes:
+  - memcached-sample-d5c88d8b5-7jlgg
+```
+11. **I don't see deployments and pods are created in my local default cluster**, I have to run >> make install run under the project to be able to see deployment and pod
+12. To see your controller in action, add another node to your cluster. Change the size in config/samples/cache_v1alpha1_memcached.yaml to 2, and then run:
+```
+$ kubectl apply -f config/samples/cache_v1alpha1_memcached.yaml
+memcached.cache.example.com/memcached-sample configured
+
+$ kubectl get pods
+NAME                               READY   STATUS    RESTARTS   AGE
+memcached-sample-9b765dfc8-2hvf8   1/1     Running   0          50s
+memcached-sample-9b765dfc8-jdhlq   1/1     Running   0          3s
+
+$ kubectl get memcached memcached-sample -o yaml
+apiVersion: cache.siqi.ibm.com/v1alpha1
+kind: Memcached
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"cache.siqi.ibm.com/v1alpha1","kind":"Memcached","metadata":{"annotations":{},"name":"memcached-sample","namespace":"default"},"spec":{"size":2}}
+  creationTimestamp: "2024-04-13T23:52:35Z"
+  generation: 2
+  name: memcached-sample
+  namespace: default
+  resourceVersion: "1015355"
+  uid: 6b8aaf19-8f7d-4bbd-abb8-2154bab5cbbf
+spec:
+  size: 2
+status:
+  nodes:
+  - memcached-sample-d5c88d8b5-7jlgg
+```
+13. Cleanup
+```
+$ kubectl delete memcached memcached-sample
+$ make undeploy
 ```
 
 ## Getting Started
